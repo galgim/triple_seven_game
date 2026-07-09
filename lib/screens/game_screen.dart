@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../game/game_state.dart';
 import '../models.dart';
+import 'menu_screen.dart';
 
 class GameScreen extends StatefulWidget {
   final String playerName;
@@ -39,6 +40,22 @@ class _GameScreenState extends State<GameScreen> {
     if (_gs.bonusTriggered) return '🔥 Match! Find the 3rd card anywhere on the board.';
     if (_gs.picksThisTurn == 1) return 'Good! Now reveal one more card.';
     return 'Your turn — reveal 2 cards. Tap Hi or Lo on an opponent, or pick from the middle pile.';
+  }
+
+  // Reached from the first-time tutorial flow, GameScreen may be the only
+  // route on the stack (Onboarding → Tutorial → Game all use
+  // pushReplacement), so there's nothing beneath to pop back to.
+  void _backToMenu(BuildContext context) {
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    } else {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => MainMenuScreen(playerName: widget.playerName),
+        ),
+      );
+    }
   }
 
   @override
@@ -115,7 +132,7 @@ class _GameScreenState extends State<GameScreen> {
                 Positioned(
                   top: 6,
                   right: 6,
-                  child: _SettingsButton(onMenu: () => Navigator.pop(context)),
+                  child: _SettingsButton(onMenu: () => _backToMenu(context)),
                 ),
                 if (widget.tutorialMode && _showTutorialHint && !_gs.gameOver)
                   Positioned(
@@ -136,7 +153,7 @@ class _GameScreenState extends State<GameScreen> {
                       });
                       _gs.reset();
                     },
-                    onMenu: () => Navigator.pop(context),
+                    onMenu: () => _backToMenu(context),
                   ),
               ],
             ),
@@ -454,6 +471,8 @@ class _RevealedCardsRow extends StatelessWidget {
     required this.bonusTriggered,
   });
 
+  static const int _maxSlots = 3;
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
@@ -461,16 +480,41 @@ class _RevealedCardsRow extends StatelessWidget {
       child: Center(
         child: Row(
           mainAxisSize: MainAxisSize.min,
-          children: revealedThisTurn.map((r) => Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6),
-            child: NanaCardWidget(
-              card: r.card,
-              darkBg: false,
-              tappable: false,
-              highlighted: bonusTriggered,
-              size: _CardSize.pile,
-            ),
-          )).toList(),
+          children: List.generate(_maxSlots, (i) {
+            final hasCard = i < revealedThisTurn.length;
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: hasCard
+                  ? NanaCardWidget(
+                      card: revealedThisTurn[i].card,
+                      darkBg: false,
+                      tappable: false,
+                      highlighted: bonusTriggered,
+                      size: _CardSize.pile,
+                    )
+                  : const _RevealedSlotPlaceholder(),
+            );
+          }),
+        ),
+      ),
+    );
+  }
+}
+
+class _RevealedSlotPlaceholder extends StatelessWidget {
+  const _RevealedSlotPlaceholder();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 64,
+      height: 88,
+      decoration: BoxDecoration(
+        color: Colors.grey.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(
+          color: Colors.grey.withValues(alpha: 0.45),
+          width: 1.5,
         ),
       ),
     );
@@ -808,9 +852,7 @@ class NanaCardWidget extends StatelessWidget {
             ? Colors.amber
             : muted
                 ? Colors.grey.shade700
-                : showValue
-                    ? Colors.white
-                    : const Color(0xFF003087),
+                : Colors.white,
         borderRadius: BorderRadius.circular(7),
         border: Border.all(
           color: highlighted
@@ -831,28 +873,41 @@ class NanaCardWidget extends StatelessWidget {
                   child: Text(
                     '${card.value}',
                     style: TextStyle(
-                      fontSize: fs,
+                      fontSize: card.value >= 10 ? fs * 0.8 : fs,
                       fontWeight: FontWeight.bold,
                       color: muted ? Colors.white70 : Colors.black,
                     ),
                   ),
                 ),
-                if (size == _CardSize.large)
+                if (size == _CardSize.large) ...[
                   Positioned(
                     top: 4,
                     left: 5,
                     child: Text(
                       '${card.value}',
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: card.value >= 10 ? 10.5 : 13,
                         fontWeight: FontWeight.bold,
                         color: muted ? Colors.white70 : Colors.black,
                       ),
                     ),
                   ),
+                  Positioned(
+                    bottom: 4,
+                    right: 5,
+                    child: Text(
+                      '${card.value}',
+                      style: TextStyle(
+                        fontSize: card.value >= 10 ? 10.5 : 13,
+                        fontWeight: FontWeight.bold,
+                        color: muted ? Colors.white70 : Colors.black,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             )
-          : _CardBack(fs: fs),
+          : const _CardBack(),
     );
   }
 }
@@ -862,39 +917,47 @@ class NanaCardWidget extends StatelessWidget {
 // ─────────────────────────────────────────
 
 class _CardBack extends StatelessWidget {
-  final double fs;
-
-  const _CardBack({required this.fs});
+  const _CardBack();
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: Padding(
-            padding: const EdgeInsets.all(4),
-            child: Container(
-              decoration: BoxDecoration(
-                border: Border.all(color: Colors.white, width: 1.5),
-                borderRadius: BorderRadius.circular(3),
-              ),
-            ),
+    return Padding(
+      padding: const EdgeInsets.all(3),
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF3853A4),
+          borderRadius: BorderRadius.circular(5),
+        ),
+        child: Center(
+          child: FractionallySizedBox(
+            widthFactor: 0.5,
+            heightFactor: 0.5,
+            child: CustomPaint(painter: _TrianglePainter()),
           ),
         ),
-        Center(
-          child: Text(
-            '777',
-            style: TextStyle(
-              fontSize: fs * 0.85,
-              fontWeight: FontWeight.w900,
-              fontStyle: FontStyle.italic,
-              color: Colors.white,
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
+}
+
+class _TrianglePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * 0.16
+      ..strokeJoin = StrokeJoin.round;
+    final path = Path()
+      ..moveTo(size.width / 2, 0)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrianglePainter oldDelegate) => false;
 }
 
 // ─────────────────────────────────────────

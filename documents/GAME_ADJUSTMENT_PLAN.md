@@ -588,6 +588,23 @@ Number text stays `Colors.black` — clearly readable on the light amber wash.
 
 ---
 
+## 35. Revealed Cards Zone — Always-Visible Placeholder Slots
+
+**Problem:** `_RevealedCardsRow` only renders the cards that have actually been revealed this turn — at the start of a turn it's fully blank, giving no indication of where cards will appear or how many can appear (up to 3, for a bonus turn).
+
+**Change:** Always render 3 slots in the revealed-cards zone. Slots not yet filled show a greyish, semi-transparent placeholder in the same size/shape as a real card; as reveals happen, each placeholder is replaced in order by the actual face-up card.
+
+**Options considered:**
+- **A — Ghost card (filled wash), chosen:** Rounded rect filled with `Colors.grey.withValues(alpha: 0.18)`, border `Colors.grey.withValues(alpha: 0.45)` at 1.5px. Reads as a translucent "card-shaped hole" waiting to be filled.
+- B — Outline only: fully transparent fill, just a `Colors.grey.withValues(alpha: 0.35)` border. Same treatment as the middle pile's `_EmptySlot` but grey-tinted instead of near-black. Lightest-weight option.
+- C — Dashed ghost outline: transparent fill with a dashed grey border (`Colors.grey.withValues(alpha: 0.4)`) via a small `CustomPainter`. Reads most clearly as a "drop zone," distinct from the solid borders on real cards.
+
+**Implementation:** `_RevealedCardsRow` now uses `List.generate(3, ...)` instead of mapping only `revealedThisTurn`. Index `i < revealedThisTurn.length` renders the real `NanaCardWidget`; otherwise renders the new `_RevealedSlotPlaceholder` widget (64×88, matching `_CardSize.pile`). Cards fill the slots left-to-right in reveal order, replacing placeholders one at a time rather than all appearing at once.
+
+**Goal:** Player always sees the 3-slot shape of the revealed zone, understands its capacity at a glance, and watches placeholders convert to real cards as the turn progresses.
+
+---
+
 ## Backlog / Ideas to Revisit
 
 _(Dump future ideas here before they're ready to be spec'd out)_
@@ -633,3 +650,4 @@ _(Dump future ideas here before they're ready to be spec'd out)_
 | 32 | Player name entry — menu field, shown left of set dots | Implemented 2026-07-03 |
 | 33 | Menu card fan — light overlap, angle ±0.25, left/right: 28 | Implemented 2026-07-03 |
 | 34 | Highlighted card — faded amber wash + vivid amber border | Implemented 2026-07-03 |
+| 35 | Revealed cards zone — 3 always-visible grey ghost placeholder slots | Implemented 2026-07-08 |

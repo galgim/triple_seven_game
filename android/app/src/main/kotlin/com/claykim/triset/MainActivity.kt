@@ -1,4 +1,4 @@
-package com.example.triple_seven_game
+package com.claykim.triset
 
 import io.flutter.embedding.android.FlutterActivity
 

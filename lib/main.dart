@@ -8,14 +8,14 @@ void main() async {
   final prefs = await SharedPreferences.getInstance();
   final hasPlayedBefore = prefs.getBool('hasPlayedBefore') ?? false;
   final savedName = prefs.getString('playerName') ?? '';
-  runApp(TripleSevenApp(hasPlayedBefore: hasPlayedBefore, savedName: savedName));
+  runApp(TrisetApp(hasPlayedBefore: hasPlayedBefore, savedName: savedName));
 }
 
-class TripleSevenApp extends StatelessWidget {
+class TrisetApp extends StatelessWidget {
   final bool hasPlayedBefore;
   final String savedName;
 
-  const TripleSevenApp({
+  const TrisetApp({
     super.key,
     required this.hasPlayedBefore,
     required this.savedName,

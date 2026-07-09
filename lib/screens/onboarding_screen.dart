@@ -57,7 +57,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             children: [
               const SizedBox(height: 52),
               const Text(
-                'TRIPLE\nSEVEN',
+                'TRISET',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 52,
@@ -94,7 +94,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               ),
               const SizedBox(height: 28),
               const Text(
-                'Is this your first time\nplaying Triple Seven?',
+                'Is this your first time\nplaying Triset?',
                 style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,

@@ -54,7 +54,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
             children: [
               const SizedBox(height: 52),
               const Text(
-                'TRIPLE\nSEVEN',
+                'TRISET',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 52,
@@ -135,38 +135,28 @@ class CardBackFan extends StatelessWidget {
         width: _cardW,
         height: _cardH,
         decoration: BoxDecoration(
-          color: const Color(0xFF003087),
+          color: Colors.white,
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: Colors.black26, width: 1.5),
           boxShadow: const [
             BoxShadow(color: Colors.black38, blurRadius: 6, offset: Offset(2, 3)),
           ],
         ),
-        child: Stack(
-          children: [
-            Positioned.fill(
-              child: Padding(
-                padding: const EdgeInsets.all(5),
-                child: Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.white, width: 1.5),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF3853A4),
+              borderRadius: BorderRadius.circular(5),
+            ),
+            child: Center(
+              child: FractionallySizedBox(
+                widthFactor: 0.5,
+                heightFactor: 0.5,
+                child: CustomPaint(painter: _TrianglePainter()),
               ),
             ),
-            const Center(
-              child: Text(
-                '777',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  fontStyle: FontStyle.italic,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       );
 
@@ -201,4 +191,24 @@ class CardBackFan extends StatelessWidget {
       ),
     );
   }
+}
+
+class _TrianglePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = size.width * 0.16
+      ..strokeJoin = StrokeJoin.round;
+    final path = Path()
+      ..moveTo(size.width / 2, 0)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _TrianglePainter oldDelegate) => false;
 }
