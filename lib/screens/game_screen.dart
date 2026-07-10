@@ -1,14 +1,29 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import '../app_theme.dart';
 import '../game/game_state.dart';
 import '../models.dart';
 import 'menu_screen.dart';
+import 'settings_screen.dart';
 
 class GameScreen extends StatefulWidget {
   final String playerName;
   final bool tutorialMode;
+  final Map<String, dynamic>? _savedGame;
 
-  const GameScreen({super.key, this.playerName = 'You', this.tutorialMode = false});
+  const GameScreen({
+    super.key,
+    this.playerName = 'You',
+    this.tutorialMode = false,
+  }) : _savedGame = null;
+
+  // ignore: prefer_initializing_formals
+  const GameScreen.fromSave({
+    super.key,
+    required Map<String, dynamic> savedGame,
+  })  : playerName = '',
+        tutorialMode = false,
+        _savedGame = savedGame;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -18,14 +33,22 @@ class _GameScreenState extends State<GameScreen> {
   late final GameState _gs;
   bool _showTutorialHint = true;
   bool _playerTurnComplete = false;
+  bool _saveClearedOnGameOver = false;
 
   @override
   void initState() {
     super.initState();
-    _gs = GameState(playerName: widget.playerName)..addListener(_rebuild);
+    _gs = widget._savedGame != null
+        ? GameState.fromJson(widget._savedGame!)
+        : GameState(playerName: widget.playerName);
+    _gs.addListener(_rebuild);
   }
 
   void _rebuild() {
+    if (_gs.gameOver && !_saveClearedOnGameOver) {
+      _saveClearedOnGameOver = true;
+      GameState.clearSave();
+    }
     if (widget.tutorialMode && !_playerTurnComplete && _gs.currentPlayerIndex != 0) {
       _playerTurnComplete = true;
       Future.delayed(const Duration(seconds: 3), () {
@@ -42,20 +65,133 @@ class _GameScreenState extends State<GameScreen> {
     return 'Your turn — reveal 2 cards. Tap Hi or Lo on an opponent, or pick from the middle pile.';
   }
 
-  // Reached from the first-time tutorial flow, GameScreen may be the only
-  // route on the stack (Onboarding → Tutorial → Game all use
-  // pushReplacement), so there's nothing beneath to pop back to.
-  void _backToMenu(BuildContext context) {
+  void _navigateToMenu() {
     if (Navigator.canPop(context)) {
       Navigator.pop(context);
     } else {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => MainMenuScreen(playerName: widget.playerName),
+          builder: (_) => MainMenuScreen(playerName: _gs.playerName),
         ),
       );
     }
+  }
+
+  // Called from game-over overlay — no save dialog needed.
+  void _backToMenuFromGameOver() {
+    _navigateToMenu();
+  }
+
+  // Called from the in-game gear menu — shows save/abandon dialog.
+  void _showExitDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text(
+          'LEAVE GAME?',
+          style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, letterSpacing: 1),
+        ),
+        content: const Text(
+          'Save your progress to continue later, or abandon the current game.',
+          style: TextStyle(fontSize: 13, color: Colors.black54),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actionsAlignment: MainAxisAlignment.start,
+        actions: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _DialogButton(
+                label: 'SAVE & EXIT',
+                filled: true,
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _gs.save();
+                  if (mounted) _navigateToMenu();
+                },
+              ),
+              const SizedBox(height: 8),
+              _DialogButton(
+                label: 'ABANDON GAME',
+                filled: false,
+                onTap: () async {
+                  Navigator.pop(context);
+                  await GameState.clearSave();
+                  if (mounted) _navigateToMenu();
+                },
+              ),
+              const SizedBox(height: 8),
+              _DialogButton(
+                label: 'CANCEL',
+                filled: false,
+                onTap: () {
+                  Navigator.pop(context);
+                  _gs.resume();
+                },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openGameMenu() {
+    _gs.pause();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'MENU',
+                style: TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1.5),
+              ),
+              const SizedBox(height: 20),
+              _DialogButton(
+                label: 'BACK TO MENU',
+                filled: true,
+                onTap: () {
+                  Navigator.pop(context);
+                  _showExitDialog();
+                },
+              ),
+              const SizedBox(height: 10),
+              _DialogButton(
+                label: 'SETTINGS',
+                filled: false,
+                onTap: () {
+                  Navigator.pop(context);
+                  final theme = AppThemeScope.of(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => SettingsScreen(theme: theme)),
+                  ).then((_) => _gs.resume());
+                },
+              ),
+              const SizedBox(height: 10),
+              _DialogButton(
+                label: 'RESUME',
+                filled: false,
+                onTap: () {
+                  Navigator.pop(context);
+                  _gs.resume();
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -67,6 +203,7 @@ class _GameScreenState extends State<GameScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = AppThemeScope.of(context);
     final isYourTurn = _gs.currentPlayerIndex == 0 && !_gs.gameOver;
     final canReveal = isYourTurn && _gs.picksThisTurn < _gs.maxPicksThisTurn;
     final human = _gs.players[0];
@@ -74,11 +211,11 @@ class _GameScreenState extends State<GameScreen> {
     final ai2 = _gs.players[2];
 
     return Scaffold(
-      backgroundColor: const Color(0xFFDCF0FB),
+      backgroundColor: theme.backgroundColor,
       body: Stack(
         children: [
-          const Positioned.fill(
-            child: CustomPaint(painter: _CrosshatchPainter()),
+          Positioned.fill(
+            child: CustomPaint(painter: _CrosshatchPainter(theme.crosshatchColor)),
           ),
           SafeArea(
             child: Stack(
@@ -132,7 +269,7 @@ class _GameScreenState extends State<GameScreen> {
                 Positioned(
                   top: 6,
                   right: 6,
-                  child: _SettingsButton(onMenu: () => _backToMenu(context)),
+                  child: _GearButton(onTap: _openGameMenu),
                 ),
                 if (widget.tutorialMode && _showTutorialHint && !_gs.gameOver)
                   Positioned(
@@ -150,10 +287,11 @@ class _GameScreenState extends State<GameScreen> {
                       setState(() {
                         _showTutorialHint = false;
                         _playerTurnComplete = false;
+                        _saveClearedOnGameOver = false;
                       });
                       _gs.reset();
                     },
-                    onMenu: () => _backToMenu(context),
+                    onMenu: _backToMenuFromGameOver,
                   ),
               ],
             ),
@@ -162,7 +300,6 @@ class _GameScreenState extends State<GameScreen> {
       ),
     );
   }
-
 }
 
 // ═══════════════════════════════════════════
@@ -241,7 +378,6 @@ class _AIProfileCard extends StatelessWidget {
     final maxDrop = n > 1 ? _fanRadius * (1 - math.cos(_fanAngle / 2)) : 0.0;
     final fanHeight = _fanCardH + _fanLift + maxDrop;
 
-    // Pre-compute trig outside LayoutBuilder — only depends on n, not on width
     final positions = List.generate(n, (i) {
       final t = n == 1 ? 0.0 : i / (n - 1) - 0.5;
       final angle = t * _fanAngle;
@@ -281,6 +417,7 @@ class _AIProfileCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final highlightColor = AppThemeScope.of(context).highlightColor;
     final canAct = canReveal && ai.hand.isNotEmpty;
 
     return Container(
@@ -289,7 +426,7 @@ class _AIProfileCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: isActive ? Colors.amber : Colors.black26,
+          color: isActive ? highlightColor : Colors.black26,
           width: isActive ? 2.5 : 1.0,
         ),
       ),
@@ -359,10 +496,7 @@ class _SetDots extends StatelessWidget {
         } else {
           return const Text(
             '○ ',
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.black38,
-            ),
+            style: TextStyle(fontSize: 11, color: Colors.black38),
           );
         }
       }),
@@ -371,7 +505,7 @@ class _SetDots extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════
-// MIDDLE SECTION — fixed 3×3 grid
+// MIDDLE SECTION
 // ═══════════════════════════════════════════
 
 class _MiddleSection extends StatelessWidget {
@@ -453,10 +587,7 @@ class _EmptySlot extends StatelessWidget {
       height: 88,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(7),
-        border: Border.all(
-          color: const Color.fromRGBO(0, 0, 0, 0.15),
-          width: 1.5,
-        ),
+        border: Border.all(color: const Color.fromRGBO(0, 0, 0, 0.15), width: 1.5),
       ),
     );
   }
@@ -516,10 +647,7 @@ class _RevealedSlotPlaceholder extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.grey.withValues(alpha: 0.18),
         borderRadius: BorderRadius.circular(7),
-        border: Border.all(
-          color: Colors.grey.withValues(alpha: 0.45),
-          width: 1.5,
-        ),
+        border: Border.all(color: Colors.grey.withValues(alpha: 0.45), width: 1.5),
       ),
     );
   }
@@ -556,8 +684,6 @@ class _FanHandSectionState extends State<_FanHandSection> {
   static const double _liftAmount = 16.0;
 
   NanaCard? _pressedCard;
-
-  // Cache fan geometry — recompute only when hand size changes
   int _cachedN = -1;
   late List<({double angle, double drop, double dx})> _cachedPositions;
 
@@ -581,9 +707,14 @@ class _FanHandSectionState extends State<_FanHandSection> {
     final maxDrop = n > 1 ? _radius * (1 - math.cos(_totalAngle / 2)) : 0.0;
     final fanHeight = _cardH + _liftAmount + maxDrop;
 
-    final unrevealed = human.hand.where((c) => !c.faceUp).toList();
-    final lowestCard = unrevealed.isNotEmpty ? unrevealed.first : null;
-    final highestCard = unrevealed.length > 1 ? unrevealed.last : null;
+    NanaCard? lowestCard;
+    NanaCard? highestCard;
+    for (final c in human.hand) {
+      if (!c.faceUp) {
+        lowestCard ??= c;
+        highestCard = c;
+      }
+    }
 
     final positions = _positions(n);
 
@@ -596,7 +727,9 @@ class _FanHandSectionState extends State<_FanHandSection> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
-              color: widget.isYourTurn ? Colors.amber : Colors.transparent,
+              color: widget.isYourTurn
+                  ? AppThemeScope.of(context).highlightColor
+                  : Colors.transparent,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
@@ -628,7 +761,8 @@ class _FanHandSectionState extends State<_FanHandSection> {
                       final isHighOrLow = card == lowestCard || card == highestCard;
                       final isTappable = canReveal && !card.faceUp && isHighOrLow;
                       final isPressed = _pressedCard == card;
-                      final topOffset = _liftAmount + pos.drop - (isPressed ? _liftAmount : 0);
+                      final topOffset =
+                          _liftAmount + pos.drop - (isPressed ? _liftAmount : 0);
                       final isMuted = !card.faceUp && !isHighOrLow;
 
                       return Positioned(
@@ -673,58 +807,18 @@ class _FanHandSectionState extends State<_FanHandSection> {
 }
 
 // ═══════════════════════════════════════════
-// SETTINGS BUTTON
+// GEAR BUTTON (opens in-game menu)
 // ═══════════════════════════════════════════
 
-class _SettingsButton extends StatelessWidget {
-  final VoidCallback onMenu;
+class _GearButton extends StatelessWidget {
+  final VoidCallback onTap;
 
-  const _SettingsButton({required this.onMenu});
+  const _GearButton({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => showDialog(
-        context: context,
-        builder: (_) => Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  'MENU',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1.5),
-                ),
-                const SizedBox(height: 20),
-                SizedBox(
-                  width: double.infinity,
-                  child: _ActionButton(
-                    label: 'BACK TO MENU',
-                    bg: Colors.black,
-                    fg: Colors.white,
-                    onTap: () {
-                      Navigator.pop(context);
-                      onMenu();
-                    },
-                  ),
-                ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: _ActionButton(
-                    label: 'RESUME',
-                    bg: Colors.white,
-                    fg: Colors.black,
-                    onTap: () => Navigator.pop(context),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      onTap: onTap,
       child: Container(
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
@@ -833,6 +927,7 @@ class NanaCardWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = AppThemeScope.of(context);
     final showValue = card.faceUp || alwaysShowValue;
     final (double? w, double h, double fs) = switch (size) {
       _CardSize.large  => (76.0,  104.0, 22.0),
@@ -847,14 +942,14 @@ class NanaCardWidget extends StatelessWidget {
       height: h,
       decoration: BoxDecoration(
         color: highlighted
-            ? Colors.amber
+            ? theme.highlightColor
             : muted
                 ? Colors.grey.shade700
                 : Colors.white,
         borderRadius: BorderRadius.circular(7),
         border: Border.all(
           color: highlighted
-              ? Colors.orange
+              ? theme.highlightBorderColor
               : tappable
                   ? Colors.black
                   : Colors.black26,
@@ -905,7 +1000,7 @@ class NanaCardWidget extends StatelessWidget {
                 ],
               ],
             )
-          : const _CardBack(),
+          : _CardBack(color: theme.cardBackColor),
     );
   }
 }
@@ -915,7 +1010,9 @@ class NanaCardWidget extends StatelessWidget {
 // ─────────────────────────────────────────
 
 class _CardBack extends StatelessWidget {
-  const _CardBack();
+  final Color color;
+
+  const _CardBack({required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -923,14 +1020,14 @@ class _CardBack extends StatelessWidget {
       padding: const EdgeInsets.all(3),
       child: Container(
         decoration: BoxDecoration(
-          color: const Color(0xFF3853A4),
+          color: color,
           borderRadius: BorderRadius.circular(5),
         ),
         child: Center(
           child: FractionallySizedBox(
             widthFactor: 0.5,
             heightFactor: 0.5,
-            child: CustomPaint(painter: _TrianglePainter()),
+            child: const CustomPaint(painter: _TrianglePainter()),
           ),
         ),
       ),
@@ -939,6 +1036,8 @@ class _CardBack extends StatelessWidget {
 }
 
 class _TrianglePainter extends CustomPainter {
+  const _TrianglePainter();
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
@@ -1008,6 +1107,49 @@ class _ActionButton extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────
+// DIALOG BUTTON (used in menu/exit dialogs)
+// ─────────────────────────────────────────
+
+class _DialogButton extends StatelessWidget {
+  final String label;
+  final bool filled;
+  final VoidCallback onTap;
+
+  const _DialogButton({
+    required this.label,
+    required this.filled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        decoration: BoxDecoration(
+          color: filled ? Colors.black : Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Colors.black, width: 1.5),
+        ),
+        child: Center(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1,
+              color: filled ? Colors.white : Colors.black,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────
 // TUTORIAL HINT BANNER
 // ─────────────────────────────────────────
 
@@ -1038,27 +1180,26 @@ class _TutorialHintBanner extends StatelessWidget {
 // ─────────────────────────────────────────
 
 class _CrosshatchPainter extends CustomPainter {
-  const _CrosshatchPainter();
+  final Color color;
+
+  const _CrosshatchPainter(this.color);
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFFA8D4F0)
+      ..color = color
       ..strokeWidth = 0.7
       ..style = PaintingStyle.stroke;
 
     const spacing = 24.0;
-
     for (double a = -size.height; a <= size.width; a += spacing) {
       canvas.drawLine(Offset(a, 0), Offset(a + size.height, size.height), paint);
     }
-
     for (double a = 0; a <= size.width + size.height; a += spacing) {
       canvas.drawLine(Offset(a, 0), Offset(a - size.height, size.height), paint);
     }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(_CrosshatchPainter old) => old.color != color;
 }
-

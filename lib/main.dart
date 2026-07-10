@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_theme.dart';
 import 'screens/menu_screen.dart';
 import 'screens/onboarding_screen.dart';
 
@@ -8,30 +9,36 @@ void main() async {
   final prefs = await SharedPreferences.getInstance();
   final hasPlayedBefore = prefs.getBool('hasPlayedBefore') ?? false;
   final savedName = prefs.getString('playerName') ?? '';
-  runApp(TrisetApp(hasPlayedBefore: hasPlayedBefore, savedName: savedName));
+  final theme = await AppTheme.load();
+  runApp(TrisetApp(hasPlayedBefore: hasPlayedBefore, savedName: savedName, theme: theme));
 }
 
 class TrisetApp extends StatelessWidget {
   final bool hasPlayedBefore;
   final String savedName;
+  final AppTheme theme;
 
   const TrisetApp({
     super.key,
     required this.hasPlayedBefore,
     required this.savedName,
+    required this.theme,
   });
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.black),
-        useMaterial3: true,
+    return AppThemeScope(
+      theme: theme,
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(seedColor: Colors.black),
+          useMaterial3: true,
+        ),
+        home: hasPlayedBefore
+            ? MainMenuScreen(playerName: savedName)
+            : const OnboardingScreen(),
       ),
-      home: hasPlayedBefore
-          ? MainMenuScreen(playerName: savedName)
-          : const OnboardingScreen(),
     );
   }
 }

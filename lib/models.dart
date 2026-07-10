@@ -4,10 +4,11 @@ import 'dart:math';
 // CARD MODEL
 // ─────────────────────────────────────────
 class NanaCard {
+  final int id;   // unique 0-35, used for save/load serialisation
   final int value;
   bool faceUp;
 
-  NanaCard({required this.value, this.faceUp = false});
+  NanaCard({required this.id, required this.value, this.faceUp = false});
 }
 
 // ─────────────────────────────────────────
@@ -45,10 +46,10 @@ class NanaDeck {
 
   void _build() {
     cards.clear();
-    // 1-12 with 3 copies each = 36 cards
+    int nextId = 0;
     for (int v = 1; v <= 12; v++) {
       for (int c = 0; c < 3; c++) {
-        cards.add(NanaCard(value: v));
+        cards.add(NanaCard(id: nextId++, value: v));
       }
     }
     cards.shuffle(_random);
@@ -72,21 +73,25 @@ class CardSighting {
 
 class AiMemory {
   final List<CardSighting> _sightings = [];
+  final Set<NanaCard> _seenCards = {};
 
   void observe(NanaCard card, int? ownerIndex) {
-    if (_sightings.any((s) => s.card == card)) return;
+    if (!_seenCards.add(card)) return;
     _sightings.add(CardSighting(card: card, ownerIndex: ownerIndex));
   }
 
   void markCollected(List<NanaCard> cards) {
+    final cardSet = cards.toSet();
     for (final s in _sightings) {
-      if (cards.contains(s.card)) s.collected = true;
+      if (cardSet.contains(s.card)) s.collected = true;
     }
   }
 
-  void clear() => _sightings.clear();
+  void clear() {
+    _sightings.clear();
+    _seenCards.clear();
+  }
 
-  // Returns sightings of a value that are still face-down and not yet collected
   List<CardSighting> knownLocationsOf(int value) {
     return _sightings
         .where((s) => s.card.value == value && !s.collected && !s.card.faceUp)
@@ -98,8 +103,6 @@ class AiMemory {
 // GAME LOGIC HELPER
 // ─────────────────────────────────────────
 class NanaGameLogic {
-  // Check and remove any sets of 3 from a player's hand
-  // Returns true if a set was found
   static bool checkAndRemoveSets(NanaPlayer player) {
     Map<int, List<NanaCard>> groups = {};
     for (var card in player.hand) {
@@ -119,6 +122,5 @@ class NanaGameLogic {
     return found;
   }
 
-  // Check if a player has won (3 sets)
   static bool hasWon(NanaPlayer player) => player.sets.length >= 3;
 }

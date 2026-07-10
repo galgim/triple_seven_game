@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models.dart';
 
 class GameState extends ChangeNotifier {
@@ -17,23 +19,195 @@ class GameState extends ChangeNotifier {
   List<({NanaCard card, NanaPlayer? owner, bool fromMiddle})> revealedThisTurn = [];
   Set<NanaCard> revealedCards = {};
 
-  // One memory bank per AI player (index 0 = AI1/player 1, index 1 = AI2/player 2)
   late List<AiMemory> _aiMemories;
-
   final Random _random = Random();
   bool _disposed = false;
   final String playerName;
+
+  bool _paused = false;
+  void Function()? _pendingAction;
+
+  // ── Constructors ──
 
   GameState({this.playerName = 'You'}) {
     _init();
   }
 
+  GameState._restore({
+    required this.playerName,
+    required List<NanaPlayer> restoredPlayers,
+    required List<NanaCard> restoredMiddlePile,
+    required List<NanaCard?> restoredMiddleSlots,
+    required int restoredPlayerIndex,
+    required int restoredPicks,
+    required int restoredMaxPicks,
+    required bool restoredBonus,
+    required String restoredLog,
+    required List<({NanaCard card, NanaPlayer? owner, bool fromMiddle})> restoredRevealed,
+  }) {
+    players = restoredPlayers;
+    middlePile = restoredMiddlePile;
+    middleSlots = restoredMiddleSlots;
+    currentPlayerIndex = restoredPlayerIndex;
+    picksThisTurn = restoredPicks;
+    maxPicksThisTurn = restoredMaxPicks;
+    bonusTriggered = restoredBonus;
+    gameLog = restoredLog;
+    revealedThisTurn = restoredRevealed;
+    revealedCards = {for (final r in revealedThisTurn) r.card};
+    _aiMemories = [AiMemory(), AiMemory()];
+
+    // For AI turns: undo any mid-turn progress and start fresh
+    if (!players[currentPlayerIndex].isHuman) {
+      if (revealedThisTurn.isNotEmpty) {
+        _flipRevealedBack();
+        _resetTurnCounters();
+      }
+      _delayed(const Duration(milliseconds: 900), _aiReveal);
+    }
+  }
+
+  // ── Save / Load ──
+
+  static const _saveKey = 'saved_game';
+
+  Future<void> save() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_saveKey, jsonEncode(toJson()));
+  }
+
+  static Future<void> clearSave() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_saveKey);
+  }
+
+  static Future<Map<String, dynamic>?> loadSave() async {
+    final prefs = await SharedPreferences.getInstance();
+    final str = prefs.getString(_saveKey);
+    if (str == null) return null;
+    return jsonDecode(str) as Map<String, dynamic>;
+  }
+
+  Map<String, dynamic> toJson() {
+    final allCards = <NanaCard>{};
+    for (final p in players) {
+      allCards.addAll(p.hand);
+      for (final s in p.sets) { allCards.addAll(s); }
+    }
+    for (final c in middleSlots) { if (c != null) allCards.add(c); }
+    for (final r in revealedThisTurn) { allCards.add(r.card); }
+
+    return {
+      'playerName': playerName,
+      'currentPlayerIndex': currentPlayerIndex,
+      'picksThisTurn': picksThisTurn,
+      'maxPicksThisTurn': maxPicksThisTurn,
+      'bonusTriggered': bonusTriggered,
+      'gameLog': gameLog,
+      'cards': {
+        for (final c in allCards)
+          '${c.id}': {'value': c.value, 'faceUp': c.faceUp}
+      },
+      'players': [
+        for (final p in players)
+          {
+            'name': p.name,
+            'isHuman': p.isHuman,
+            'hand': p.hand.map((c) => c.id).toList(),
+            'sets': p.sets.map((s) => s.map((c) => c.id).toList()).toList(),
+          }
+      ],
+      'middleSlots': middleSlots.map((c) => c?.id).toList(),
+      'revealedThisTurn': revealedThisTurn.map((r) => {
+        'cardId': r.card.id,
+        'ownerIndex': r.owner != null ? players.indexOf(r.owner!) : null,
+        'fromMiddle': r.fromMiddle,
+      }).toList(),
+    };
+  }
+
+  static GameState fromJson(Map<String, dynamic> json) {
+    final cardsData = json['cards'] as Map<String, dynamic>;
+    final cardMap = <int, NanaCard>{};
+    cardsData.forEach((key, value) {
+      final id = int.parse(key);
+      final data = value as Map<String, dynamic>;
+      // ignore: deprecated_member_use
+      cardMap[id] = NanaCard(id: id, value: data['value'] as int, faceUp: data['faceUp'] as bool);
+    });
+
+    final playersData = json['players'] as List<dynamic>;
+    final players = <NanaPlayer>[];
+    for (final pd in playersData) {
+      final p = NanaPlayer(name: pd['name'] as String, isHuman: pd['isHuman'] as bool);
+      p.hand = (pd['hand'] as List<dynamic>).map((id) => cardMap[id as int]!).toList();
+      p.sets = (pd['sets'] as List<dynamic>)
+          .map((s) => (s as List<dynamic>).map((id) => cardMap[id as int]!).toList())
+          .toList();
+      players.add(p);
+    }
+
+    final middleSlots = (json['middleSlots'] as List<dynamic>)
+        .map((id) => id == null ? null : cardMap[id as int])
+        .toList();
+    final middlePile = middleSlots.whereType<NanaCard>().toList();
+
+    final revealedData = json['revealedThisTurn'] as List<dynamic>;
+    final revealedThisTurn = revealedData.map((r) {
+      final ownerIdx = r['ownerIndex'] as int?;
+      return (
+        card: cardMap[r['cardId'] as int]!,
+        owner: ownerIdx != null ? players[ownerIdx] : null,
+        fromMiddle: r['fromMiddle'] as bool,
+      );
+    }).toList();
+
+    return GameState._restore(
+      playerName: json['playerName'] as String,
+      restoredPlayers: players,
+      restoredMiddlePile: middlePile,
+      restoredMiddleSlots: middleSlots,
+      restoredPlayerIndex: json['currentPlayerIndex'] as int,
+      restoredPicks: json['picksThisTurn'] as int,
+      restoredMaxPicks: json['maxPicksThisTurn'] as int,
+      restoredBonus: json['bonusTriggered'] as bool,
+      restoredLog: json['gameLog'] as String,
+      restoredRevealed: revealedThisTurn,
+    );
+  }
+
+  // ── Pause / Resume ──
+
+  void pause() => _paused = true;
+
+  void resume() {
+    if (!_paused) return;
+    _paused = false;
+    final action = _pendingAction;
+    _pendingAction = null;
+    if (action != null) action();
+  }
+
+  // Wraps Future.delayed so it respects the paused state.
+  void _delayed(Duration d, void Function() action) {
+    Future.delayed(d, () {
+      if (_disposed) return;
+      if (_paused) {
+        _pendingAction = action;
+        return;
+      }
+      action();
+    });
+  }
+
+  // ── Init ──
+
   void _init() {
     final deck = NanaDeck();
     players = [
       NanaPlayer(name: playerName, isHuman: true),
-      NanaPlayer(name: 'AI 1', isHuman: false),
-      NanaPlayer(name: 'AI 2', isHuman: false),
+      NanaPlayer(name: 'Andrew', isHuman: false),
+      NanaPlayer(name: 'Joey', isHuman: false),
     ];
     for (int i = 0; i < 9; i++) {
       for (var player in players) {
@@ -55,6 +229,8 @@ class GameState extends ChangeNotifier {
   }
 
   void reset() {
+    _pendingAction = null;
+    _paused = false;
     _init();
     notifyListeners();
   }
@@ -68,7 +244,7 @@ class GameState extends ChangeNotifier {
   // ── Internal helpers ──
 
   void _sortAllHands() {
-    for (var p in players) p.hand.sort((a, b) => a.value.compareTo(b.value));
+    for (var p in players) { p.hand.sort((a, b) => a.value.compareTo(b.value)); }
   }
 
   void _resetTurnCounters() {
@@ -80,7 +256,7 @@ class GameState extends ChangeNotifier {
   }
 
   void _flipRevealedBack() {
-    for (final r in revealedThisTurn) r.card.faceUp = false;
+    for (final r in revealedThisTurn) { r.card.faceUp = false; }
     revealedThisTurn = [];
     revealedCards = {};
   }
@@ -97,7 +273,16 @@ class GameState extends ChangeNotifier {
   void _log(String msg) {
     if (_disposed) return;
     gameLog = msg;
-    // gameLog is not displayed in the UI — callers handle notifications
+  }
+
+  static NanaCard? _firstWhere(List<NanaCard> list, bool Function(NanaCard) test) {
+    for (final c in list) { if (test(c)) return c; }
+    return null;
+  }
+
+  static NanaCard? _lastWhere(List<NanaCard> list, bool Function(NanaCard) test) {
+    for (int i = list.length - 1; i >= 0; i--) { if (test(list[i])) return list[i]; }
+    return null;
   }
 
   // ── Turn flow ──
@@ -114,21 +299,20 @@ class GameState extends ChangeNotifier {
 
     if (picksThisTurn == 1) {
       _log('${currentPlayer.name} revealed ${values[0]} from $source.');
-      // canReveal is still true (1 < 2); no additional notify needed
     } else if (picksThisTurn == 2) {
       if (values[0] == values[1]) {
         bonusTriggered = true;
         maxPicksThisTurn = 3;
         _log('🔥 MATCH! Both ${values[0]} — find the 3rd!');
-        notifyListeners(); // bonusTriggered + maxPicksThisTurn changed
+        notifyListeners();
       } else {
         _log('No match (${values[0]} & ${values[1]}). Flipping back...');
-        notifyListeners(); // picksThisTurn == maxPicksThisTurn → disable buttons
-        Future.delayed(const Duration(milliseconds: 600), () {
+        notifyListeners();
+        _delayed(const Duration(milliseconds: 600), () {
           if (_disposed) return;
           _flipRevealedBack();
           notifyListeners();
-          Future.delayed(const Duration(milliseconds: 350), _nextTurn);
+          _delayed(const Duration(milliseconds: 350), _nextTurn);
         });
       }
     } else if (picksThisTurn == 3) {
@@ -136,20 +320,20 @@ class GameState extends ChangeNotifier {
         final fromOwnHand = !latest.fromMiddle && latest.owner == currentPlayer;
         final extra = (fromOwnHand && !currentPlayer.isHuman) ? ' Found it in their own hand!' : '';
         _log('🎉 TRIPLE ${values[0]}! Collecting set!$extra');
-        Future.delayed(const Duration(milliseconds: 450), () {
+        _delayed(const Duration(milliseconds: 450), () {
           if (_disposed) return;
           _collectSet(currentPlayer);
           notifyListeners();
-          Future.delayed(const Duration(milliseconds: 350), _nextTurn);
+          _delayed(const Duration(milliseconds: 350), _nextTurn);
         });
       } else {
         _log('No triple (${values[0]}, ${values[1]}, ${values[2]}). Flipping back...');
-        notifyListeners(); // picksThisTurn == maxPicksThisTurn → disable buttons
-        Future.delayed(const Duration(milliseconds: 600), () {
+        notifyListeners();
+        _delayed(const Duration(milliseconds: 600), () {
           if (_disposed) return;
           _flipRevealedBack();
           notifyListeners();
-          Future.delayed(const Duration(milliseconds: 350), _nextTurn);
+          _delayed(const Duration(milliseconds: 350), _nextTurn);
         });
       }
     }
@@ -158,7 +342,7 @@ class GameState extends ChangeNotifier {
         !currentPlayer.isHuman &&
         picksThisTurn < maxPicksThisTurn &&
         !(picksThisTurn == 2 && values.length >= 2 && values[0] != values[1])) {
-      Future.delayed(const Duration(milliseconds: 700), _aiReveal);
+      _delayed(const Duration(milliseconds: 1400), _aiReveal);
     }
   }
 
@@ -201,7 +385,7 @@ class GameState extends ChangeNotifier {
     notifyListeners();
     if (!players[currentPlayerIndex].isHuman) {
       _log('${players[currentPlayerIndex].name} is thinking...');
-      Future.delayed(const Duration(milliseconds: 700), _aiReveal);
+      _delayed(const Duration(milliseconds: 1200), _aiReveal);
     } else {
       _log('Your turn — reveal 2 cards.');
     }
@@ -211,7 +395,6 @@ class GameState extends ChangeNotifier {
 
   AiMemory _memoryFor(int playerIndex) => _aiMemories[playerIndex - 1];
 
-  // Attempts to reveal a card from a memory sighting. Returns true if successful.
   bool _tryRevealFromSighting(CardSighting sighting, NanaPlayer ai) {
     final card = sighting.card;
     if (card.faceUp) return false;
@@ -239,22 +422,20 @@ class GameState extends ChangeNotifier {
     final memory = _memoryFor(currentPlayerIndex);
     final others = players.where((p) => p != ai && p.hand.isNotEmpty).toList();
 
-    // ── Bonus turn: find the matching 3rd card ──
     if (bonusTriggered && picksThisTurn == 2 && revealedThisTurn.isNotEmpty) {
       final targetValue = revealedThisTurn[0].card.value;
 
-      // Check memory first — AI goes straight to a card it has seen
       for (final sighting in memory.knownLocationsOf(targetValue)) {
         if (_tryRevealFromSighting(sighting, ai)) return;
       }
 
-      // Fallback: check hi/lo extremes of opponents (original logic)
       for (final target in others) {
-        final unrevealed = target.hand.where((c) => !c.faceUp).toList();
-        if (unrevealed.isEmpty) continue;
-        NanaCard? matchCard;
-        if (unrevealed.last.value == targetValue) { matchCard = unrevealed.last; }
-        else if (unrevealed.first.value == targetValue) { matchCard = unrevealed.first; }
+        final hi = _lastWhere(target.hand, (c) => !c.faceUp);
+        if (hi == null) continue;
+        final lo = _firstWhere(target.hand, (c) => !c.faceUp)!;
+        final matchCard = hi.value == targetValue
+            ? hi
+            : (lo.value == targetValue ? lo : null);
         if (matchCard != null) {
           matchCard.faceUp = true;
           _addRevealed(matchCard, target, false);
@@ -263,41 +444,34 @@ class GameState extends ChangeNotifier {
           return;
         }
       }
-      final middleMatch = middlePile.where((c) => c.value == targetValue && !c.faceUp).toList();
-      if (middleMatch.isNotEmpty) {
-        final card = middleMatch.first;
-        card.faceUp = true;
-        _addRevealed(card, null, true);
+      final middleMatch = _firstWhere(middlePile, (c) => c.value == targetValue && !c.faceUp);
+      if (middleMatch != null) {
+        middleMatch.faceUp = true;
+        _addRevealed(middleMatch, null, true);
         notifyListeners();
         _afterReveal(ai);
         return;
       }
-      final ownMatch = ai.hand.where((c) => c.value == targetValue && !c.faceUp).toList();
-      if (ownMatch.isNotEmpty) {
-        final card = ownMatch.first;
-        card.faceUp = true;
-        _addRevealed(card, ai, false);
+      final ownMatch = _firstWhere(ai.hand, (c) => c.value == targetValue && !c.faceUp);
+      if (ownMatch != null) {
+        ownMatch.faceUp = true;
+        _addRevealed(ownMatch, ai, false);
         notifyListeners();
         _afterReveal(ai);
         return;
       }
     }
 
-    // ── Normal turn ──
-
-    // Pick 1: AI knows its own hand — look for a value it holds 2+ of and find the 3rd
     if (picksThisTurn == 0) {
       final valueCounts = <int, int>{};
       for (final c in ai.hand) {
         valueCounts[c.value] = (valueCounts[c.value] ?? 0) + 1;
       }
-      // Prioritize values where the AI already has a pair (needs 1 more)
       for (final entry in valueCounts.entries.where((e) => e.value >= 2)) {
         for (final sighting in memory.knownLocationsOf(entry.key)) {
           if (_tryRevealFromSighting(sighting, ai)) return;
         }
       }
-      // Also try values where the AI has 1 (look for a pair to set up a match)
       for (final entry in valueCounts.entries.where((e) => e.value == 1)) {
         for (final sighting in memory.knownLocationsOf(entry.key)) {
           if (_tryRevealFromSighting(sighting, ai)) return;
@@ -305,7 +479,6 @@ class GameState extends ChangeNotifier {
       }
     }
 
-    // Pick 2: AI knows pick 1's value — search memory for a matching card
     if (picksThisTurn == 1 && revealedThisTurn.isNotEmpty) {
       final targetValue = revealedThisTurn[0].card.value;
       for (final sighting in memory.knownLocationsOf(targetValue)) {
@@ -313,7 +486,7 @@ class GameState extends ChangeNotifier {
       }
     }
 
-    // Fallback: original random logic
+    // Fallback: random
     final choice = _random.nextInt(3);
     if (choice == 0 && middlePile.isNotEmpty) {
       final available = middlePile.where((c) => !c.faceUp).toList();
@@ -328,9 +501,10 @@ class GameState extends ChangeNotifier {
     }
     if (others.isNotEmpty) {
       final target = others[_random.nextInt(others.length)];
-      final unrevealed = target.hand.where((c) => !c.faceUp).toList();
-      if (unrevealed.isNotEmpty) {
-        final card = _random.nextBool() ? unrevealed.last : unrevealed.first;
+      final lo = _firstWhere(target.hand, (c) => !c.faceUp);
+      if (lo != null) {
+        final hi = _lastWhere(target.hand, (c) => !c.faceUp)!;
+        final card = _random.nextBool() ? hi : lo;
         card.faceUp = true;
         _addRevealed(card, target, false);
         notifyListeners();
@@ -352,18 +526,19 @@ class GameState extends ChangeNotifier {
     _nextTurn();
   }
 
-  // ── Public API (called by UI) ──
+  // ── Public API ──
 
   void revealFromPlayer(NanaPlayer target, bool highest) {
     if (gameOver || currentPlayerIndex != 0) return;
     if (picksThisTurn >= maxPicksThisTurn) return;
     if (target.hand.isEmpty) return;
-    final available = target.hand.where((c) => !revealedCards.contains(c)).toList();
-    if (available.isEmpty) {
+    final card = highest
+        ? _lastWhere(target.hand, (c) => !revealedCards.contains(c))
+        : _firstWhere(target.hand, (c) => !revealedCards.contains(c));
+    if (card == null) {
       _log('No more unrevealed cards from ${target.name}!');
       return;
     }
-    final card = highest ? available.last : available.first;
     card.faceUp = true;
     _addRevealed(card, target, false);
     notifyListeners();
