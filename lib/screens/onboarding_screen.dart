@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../widgets/app_button.dart';
+import '../widgets/name_field.dart';
+import '../widgets/triset_title.dart';
 import 'menu_screen.dart';
 import 'tutorial_screen.dart';
 
@@ -51,47 +54,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(
             children: [
               const SizedBox(height: 52),
-              const Text(
-                'TRISET',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 52,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 4,
-                  height: 1.1,
-                ),
-              ),
+              const TrisetTitle(),
               const SizedBox(height: 24),
               const CardBackFan(),
-              const Spacer(),
-              TextField(
-                controller: _nameController,
-                maxLength: 14,
-                textCapitalization: TextCapitalization.words,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                decoration: InputDecoration(
-                  labelText: "What's your name?",
-                  labelStyle:
-                      const TextStyle(color: Colors.black45, letterSpacing: 1),
-                  counterText: '',
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide:
-                        const BorderSide(color: Colors.black26, width: 1.5),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.black, width: 2),
-                  ),
-                ),
-              ),
+              const SizedBox(height: 40),
+              NameField(controller: _nameController, labelText: "What's your name?"),
               const SizedBox(height: 28),
               const Text(
                 'Is this your first time\nplaying Triset?',
@@ -132,27 +104,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   Widget _choiceButton(String label,
       {required bool filled, required VoidCallback onTap}) {
-    return GestureDetector(
+    return AppButton(
+      label: label,
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: filled ? Colors.black : Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.black, width: 2),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1.5,
-              color: filled ? Colors.white : Colors.black,
-            ),
-          ),
-        ),
-      ),
+      backgroundColor: filled ? Colors.black : Colors.white,
+      textColor: filled ? Colors.white : Colors.black,
+      borderColor: Colors.black,
+      verticalPadding: 16,
+      fontSize: 13,
+      letterSpacing: 1.5,
     );
   }
 }

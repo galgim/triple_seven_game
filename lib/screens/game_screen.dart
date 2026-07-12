@@ -1,8 +1,10 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../app_theme.dart';
+import '../fade_route.dart';
 import '../game/game_state.dart';
 import '../models.dart';
+import '../widgets/app_button.dart';
 import 'menu_screen.dart';
 import 'settings_screen.dart';
 
@@ -71,9 +73,7 @@ class _GameScreenState extends State<GameScreen> {
     } else {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(
-          builder: (_) => MainMenuScreen(playerName: _gs.playerName),
-        ),
+        fadeRoute((_) => MainMenuScreen(playerName: _gs.playerName)),
       );
     }
   }
@@ -268,7 +268,7 @@ class _GameScreenState extends State<GameScreen> {
                 ),
                 Positioned(
                   top: 6,
-                  right: 6,
+                  left: 6,
                   child: _GearButton(onTap: _openGameMenu),
                 ),
                 if (widget.tutorialMode && _showTutorialHint && !_gs.gameOver)
@@ -283,6 +283,7 @@ class _GameScreenState extends State<GameScreen> {
                 if (_gs.gameOver)
                   _GameOverOverlay(
                     winner: _gs.winner,
+                    playerWon: _gs.winner == _gs.playerName,
                     onPlayAgain: () {
                       setState(() {
                         _showTutorialHint = false;
@@ -825,7 +826,7 @@ class _GearButton extends StatelessWidget {
           color: Colors.black,
           borderRadius: BorderRadius.circular(8),
         ),
-        child: const Icon(Icons.settings, color: Colors.white, size: 18),
+        child: const Icon(Icons.menu, color: Colors.white, size: 18),
       ),
     );
   }
@@ -837,11 +838,13 @@ class _GearButton extends StatelessWidget {
 
 class _GameOverOverlay extends StatelessWidget {
   final String winner;
+  final bool playerWon;
   final VoidCallback onPlayAgain;
   final VoidCallback onMenu;
 
   const _GameOverOverlay({
     required this.winner,
+    required this.playerWon,
     required this.onPlayAgain,
     required this.onMenu,
   });
@@ -862,12 +865,12 @@ class _GameOverOverlay extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                winner == 'You' ? '🏆' : '😢',
+                playerWon ? '🏆' : '😢',
                 style: const TextStyle(fontSize: 48),
               ),
               const SizedBox(height: 8),
               Text(
-                winner == 'You' ? 'YOU WIN!' : '$winner WINS!',
+                playerWon ? 'YOU WIN!' : '$winner WINS!',
                 style: const TextStyle(
                     fontSize: 22, fontWeight: FontWeight.w900, letterSpacing: 2),
               ),
@@ -1123,28 +1126,17 @@ class _DialogButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return AppButton(
+      label: label,
       onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 13),
-        decoration: BoxDecoration(
-          color: filled ? Colors.black : Colors.white,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Colors.black, width: 1.5),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 1,
-              color: filled ? Colors.white : Colors.black,
-            ),
-          ),
-        ),
-      ),
+      backgroundColor: filled ? Colors.black : Colors.white,
+      textColor: filled ? Colors.white : Colors.black,
+      borderColor: Colors.black,
+      borderWidth: 1.5,
+      verticalPadding: 13,
+      borderRadius: 10,
+      fontSize: 13,
+      letterSpacing: 1,
     );
   }
 }

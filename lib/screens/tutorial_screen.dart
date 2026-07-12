@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
+import '../widgets/app_button.dart';
 import 'game_screen.dart';
 import 'menu_screen.dart';
 
 class TutorialScreen extends StatefulWidget {
-  final String playerName;
+  final String? playerName;
+  final bool reviewOnly;
 
-  const TutorialScreen({super.key, required this.playerName});
+  const TutorialScreen({super.key, this.playerName, this.reviewOnly = false});
 
   @override
   State<TutorialScreen> createState() => _TutorialScreenState();
@@ -56,12 +58,14 @@ class _TutorialScreenState extends State<TutorialScreen> {
   void _next() {
     if (_step < _slides.length - 1) {
       setState(() => _step++);
+    } else if (widget.reviewOnly) {
+      Navigator.pop(context);
     } else {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
           builder: (_) =>
-              GameScreen(playerName: widget.playerName, tutorialMode: true),
+              GameScreen(playerName: widget.playerName!, tutorialMode: true),
         ),
       );
     }
@@ -128,27 +132,9 @@ class _TutorialScreenState extends State<TutorialScreen> {
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(32, 0, 32, 40),
-              child: GestureDetector(
+              child: AppButton(
+                label: isLast ? (widget.reviewOnly ? 'DONE' : 'START PLAYING') : 'NEXT',
                 onTap: _next,
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 18),
-                  decoration: BoxDecoration(
-                    color: Colors.black,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Center(
-                    child: Text(
-                      isLast ? 'START PLAYING' : 'NEXT',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 2,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
               ),
             ),
           ],

@@ -1,20 +1,13 @@
 import 'package:flutter/material.dart';
 import '../app_theme.dart';
+import '../fade_route.dart';
+import '../widgets/app_button.dart';
+import 'tutorial_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   final AppTheme theme;
 
   const SettingsScreen({super.key, required this.theme});
-
-  // Background gets the original light blue as an extra first option
-  static const _bgPresets = <Color>[
-    Color(0xFFDCF0FB),
-    Color(0xFF3853A4),
-    Color(0xFF8B1A1A),
-    Color(0xFF1A5C2A),
-    Color(0xFFD35400),
-    Color(0xFFFFC107),
-  ];
 
   static const _colorPresets = <Color>[
     Color(0xFF3853A4),
@@ -23,6 +16,9 @@ class SettingsScreen extends StatelessWidget {
     Color(0xFFD35400),
     Color(0xFFFFC107),
   ];
+
+  // Background gets the original light blue as an extra first option
+  static const _bgPresets = <Color>[Color(0xFFDCF0FB), ..._colorPresets];
 
   @override
   Widget build(BuildContext context) {
@@ -58,35 +54,30 @@ class SettingsScreen extends StatelessWidget {
               presets: _colorPresets,
               onSelect: theme.setCardBackColor,
             ),
-            const SizedBox(height: 28),
-            _ColorSection(
-              label: 'Highlight',
-              selected: theme.highlightColor,
-              presets: _colorPresets,
-              onSelect: theme.setHighlightColor,
-            ),
             const SizedBox(height: 44),
-            GestureDetector(
-              onTap: theme.reset,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.black26, width: 1.5),
-                ),
-                child: const Center(
-                  child: Text(
-                    'RESET TO DEFAULTS',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.5,
-                      color: Colors.black54,
-                    ),
-                  ),
-                ),
+            AppButton(
+              label: 'HOW TO PLAY',
+              onTap: () => Navigator.push(
+                context,
+                fadeRoute((_) => const TutorialScreen(reviewOnly: true)),
               ),
+              verticalPadding: 14,
+              borderRadius: 12,
+              fontSize: 13,
+              letterSpacing: 1.5,
+            ),
+            const SizedBox(height: 14),
+            AppButton(
+              label: 'RESET TO DEFAULTS',
+              onTap: theme.reset,
+              backgroundColor: Colors.white,
+              textColor: Colors.black54,
+              borderColor: Colors.black26,
+              borderWidth: 1.5,
+              verticalPadding: 14,
+              borderRadius: 12,
+              fontSize: 13,
+              letterSpacing: 1.5,
             ),
           ],
         ),
@@ -136,7 +127,9 @@ class _ColorSection extends StatelessWidget {
           style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 14),
-        Row(
+        Wrap(
+          spacing: 14,
+          runSpacing: 14,
           children: presets.map((color) {
             final isSelected = selected == color;
             return GestureDetector(
@@ -144,7 +137,6 @@ class _ColorSection extends StatelessWidget {
               child: Container(
                 width: 46,
                 height: 46,
-                margin: const EdgeInsets.only(right: 14),
                 decoration: BoxDecoration(
                   color: color,
                   shape: BoxShape.circle,

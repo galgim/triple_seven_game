@@ -395,6 +395,17 @@ class GameState extends ChangeNotifier {
 
   AiMemory _memoryFor(int playerIndex) => _aiMemories[playerIndex - 1];
 
+  // Hard rule: a card sitting in a hand (own or an opponent's) can only ever
+  // be revealed if it is currently that hand's highest or lowest face-down
+  // card. Every AI reveal-from-a-hand path must be gated through this —
+  // the middle pile has no such restriction.
+  bool _isHiOrLoInHand(List<NanaCard> hand, NanaCard card) {
+    final hi = _lastWhere(hand, (c) => !c.faceUp);
+    final lo = _firstWhere(hand, (c) => !c.faceUp);
+    if (hi == null || lo == null) return false;
+    return card.value == hi.value || card.value == lo.value;
+  }
+
   bool _tryRevealFromSighting(CardSighting sighting, NanaPlayer ai) {
     final card = sighting.card;
     if (card.faceUp) return false;
@@ -408,6 +419,7 @@ class GameState extends ChangeNotifier {
     } else {
       final owner = players[sighting.ownerIndex!];
       if (!owner.hand.contains(card)) return false;
+      if (!_isHiOrLoInHand(owner.hand, card)) return false;
       card.faceUp = true;
       _addRevealed(card, owner, false);
       notifyListeners();
@@ -453,7 +465,7 @@ class GameState extends ChangeNotifier {
         return;
       }
       final ownMatch = _firstWhere(ai.hand, (c) => c.value == targetValue && !c.faceUp);
-      if (ownMatch != null) {
+      if (ownMatch != null && _isHiOrLoInHand(ai.hand, ownMatch)) {
         ownMatch.faceUp = true;
         _addRevealed(ownMatch, ai, false);
         notifyListeners();

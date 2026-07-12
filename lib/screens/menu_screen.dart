@@ -2,7 +2,11 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../app_theme.dart';
+import '../fade_route.dart';
 import '../game/game_state.dart';
+import '../widgets/app_button.dart';
+import '../widgets/name_field.dart';
+import '../widgets/triset_title.dart';
 import 'game_screen.dart';
 import 'settings_screen.dart';
 
@@ -18,6 +22,17 @@ class MainMenuScreen extends StatefulWidget {
 class _MainMenuScreenState extends State<MainMenuScreen> {
   late final TextEditingController _nameController;
   bool _hasSavedGame = false;
+  final GlobalKey _buttonBlockKey = GlobalKey();
+  double _buttonBlockHeight = 200;
+
+  void _measureButtonBlock() {
+    final box = _buttonBlockKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return;
+    final h = box.size.height;
+    if ((h - _buttonBlockHeight).abs() > 0.5) {
+      setState(() => _buttonBlockHeight = h);
+    }
+  }
 
   @override
   void initState() {
@@ -49,7 +64,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     if (!mounted) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => GameScreen(playerName: _playerName)),
+      fadeRoute((_) => GameScreen(playerName: _playerName)),
     );
     if (mounted) _checkSave();
   }
@@ -59,7 +74,7 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     if (saved == null || !mounted) return;
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => GameScreen.fromSave(savedGame: saved)),
+      fadeRoute((_) => GameScreen.fromSave(savedGame: saved)),
     );
     if (mounted) _checkSave();
   }
@@ -74,58 +89,56 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    final restingBottom = _buttonBlockHeight + 16;
+    final fieldBottom = math.max(bottomInset + 16, restingBottom);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _measureButtonBlock());
+
     return Scaffold(
       backgroundColor: Colors.white,
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
+          child: Stack(
             children: [
-              const SizedBox(height: 52),
-              const Text(
-                'TRISET',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 52,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 4,
-                  height: 1.1,
+              Column(
+                children: [
+                  const SizedBox(height: 52),
+                  const TrisetTitle(),
+                  const SizedBox(height: 24),
+                  const CardBackFan(),
+                ],
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Column(
+                  key: _buttonBlockKey,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_hasSavedGame) ...[
+                      _menuButton(label: 'CONTINUE', onTap: _continue),
+                      const SizedBox(height: 12),
+                      _menuButton(label: 'NEW GAME', onTap: _play, outlined: true),
+                    ] else
+                      _menuButton(label: 'PLAY', onTap: _play),
+                    const SizedBox(height: 12),
+                    _menuButton(label: 'SETTINGS', onTap: _openSettings, outlined: true),
+                    const SizedBox(height: 48),
+                  ],
                 ),
               ),
-              const SizedBox(height: 24),
-              const CardBackFan(),
-              const Spacer(),
-              TextField(
-                controller: _nameController,
-                maxLength: 14,
-                textCapitalization: TextCapitalization.words,
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
-                decoration: InputDecoration(
-                  labelText: 'Your name',
-                  labelStyle: const TextStyle(color: Colors.black45, letterSpacing: 1),
-                  counterText: '',
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.black26, width: 1.5),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: const BorderSide(color: Colors.black, width: 2),
-                  ),
-                ),
+              AnimatedPositioned(
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOut,
+                left: 0,
+                right: 0,
+                bottom: fieldBottom,
+                child: NameField(controller: _nameController, labelText: 'Your name'),
               ),
-              const SizedBox(height: 16),
-              if (_hasSavedGame) ...[
-                _menuButton(label: 'CONTINUE', onTap: _continue),
-                const SizedBox(height: 12),
-                _menuButton(label: 'NEW GAME', onTap: _play, outlined: true),
-              ] else
-                _menuButton(label: 'PLAY', onTap: _play),
-              const SizedBox(height: 12),
-              _menuButton(label: 'SETTINGS', onTap: _openSettings, outlined: true),
-              const SizedBox(height: 48),
             ],
           ),
         ),
@@ -138,28 +151,12 @@ class _MainMenuScreenState extends State<MainMenuScreen> {
     required VoidCallback onTap,
     bool outlined = false,
   }) {
-    return GestureDetector(
+    return AppButton(
+      label: label,
       onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 18),
-        decoration: BoxDecoration(
-          color: outlined ? Colors.white : Colors.black,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.black, width: 2),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 2,
-              color: outlined ? Colors.black : Colors.white,
-            ),
-          ),
-        ),
-      ),
+      backgroundColor: outlined ? Colors.white : Colors.black,
+      textColor: outlined ? Colors.black : Colors.white,
+      borderColor: Colors.black,
     );
   }
 }
